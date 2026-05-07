@@ -1,21 +1,22 @@
 from fastapi import FastAPI
 from pydantic import BaseModel
+
 from backend.database import get_conn, init_db
-print("✅ LOADED NEW MAIN.PY")
+
 import imaplib
 import email
 from email.header import decode_header
 
 app = FastAPI()
 
-# -----------------------
-# Models
-# -----------------------
+
+
 class EmailCreate(BaseModel):
     sender: str
     subject: str
     date: str
     snippet: str
+
 
 class AccountCreate(BaseModel):
     provider: str
@@ -23,11 +24,13 @@ class AccountCreate(BaseModel):
     imap_port: int
     email: str
 
+
 class IMAPTestRequest(BaseModel):
     imap_host: str
     imap_port: int
     email: str
     password: str
+
 
 class SyncRequest(BaseModel):
     imap_host: str
@@ -37,10 +40,7 @@ class SyncRequest(BaseModel):
     limit: int = 20
 
 
-# -----------------------
-# Helpers
-# -----------------------
-def _decode_maybe(value):
+def _decode_maybe(value: str | None) -> str:
     if not value:
         return ""
     parts = decode_header(value)
@@ -52,7 +52,9 @@ def _decode_maybe(value):
             out += text
     return out
 
-def _get_body_text(msg):
+
+def _get_body_text(msg) -> str:
+    # Prefer text/plain, fallback to text/html
     if msg.is_multipart():
         for part in msg.walk():
             ctype = part.get_content_type()
@@ -74,17 +76,13 @@ def _get_body_text(msg):
     return payload.decode(charset, errors="ignore")
 
 
-# -----------------------
-# Basic endpoint
-# -----------------------
+
 @app.get("/")
 def home():
     return {"message": "Server is running"}
 
 
-# -----------------------
-# Emails endpoints
-# -----------------------
+
 @app.get("/emails")
 def list_emails():
     init_db()
@@ -98,6 +96,7 @@ def list_emails():
     for row in rows:
         emails.append({
             "id": row["id"],
+            "imap_uid": row["imap_uid"],
             "from": row["sender"],
             "subject": row["subject"],
             "date": row["date"],
@@ -115,19 +114,16 @@ def create_email(email_in: EmailCreate):
     cur = conn.cursor()
 
     cur.execute("""
-        INSERT INTO emails (sender, subject, date, snippet)
-        VALUES (?, ?, ?, ?)
-    """, (email_in.sender, email_in.subject, email_in.date, email_in.snippet))
+        INSERT INTO emails (imap_uid, sender, subject, date, snippet)
+        VALUES (?, ?, ?, ?, ?)
+    """, (None, email_in.sender, email_in.subject, email_in.date, email_in.snippet))
 
     conn.commit()
     conn.close()
-
     return {"message": "Email added successfully"}
 
 
-# -----------------------
-# Accounts endpoints
-# -----------------------
+
 @app.get("/accounts")
 def list_accounts():
     init_db()
@@ -164,13 +160,10 @@ def create_account(account: AccountCreate):
 
     conn.commit()
     conn.close()
-
     return {"message": "Account saved"}
 
 
-# -----------------------
-# IMAP test
-# -----------------------
+
 @app.post("/imap/test")
 def test_imap_connection(data: IMAPTestRequest):
     try:
@@ -182,9 +175,7 @@ def test_imap_connection(data: IMAPTestRequest):
         return {"status": "Connection failed", "error": str(e)}
 
 
-# -----------------------
-# Sync emails into SQLite
-# -----------------------
+
 @app.post("/sync")
 def sync_emails(req: SyncRequest):
     init_db()
@@ -194,20 +185,31 @@ def sync_emails(req: SyncRequest):
         mail.login(req.email, req.password)
         mail.select("INBOX")
 
-        status, data = mail.search(None, "ALL")
+        # Search all message UIDs
+        status, data = mail.uid("search", None, "ALL")
         if status != "OK":
+            mail.logout()
             return {"status": "failed", "error": "IMAP search failed"}
 
-        all_ids = data[0].split()
-        latest_ids = all_ids[-req.limit:] if req.limit > 0 else all_ids
+        all_uids = data[0].split()
+        latest_uids = all_uids[-req.limit:] if req.limit > 0 else all_uids
 
         conn = get_conn()
         cur = conn.cursor()
 
         inserted = 0
+        skipped = 0
 
-        for mid in reversed(latest_ids):
-            status, msg_data = mail.fetch(mid, "(RFC822)")
+        for uid in reversed(latest_uids):
+            uid_str = uid.decode() if isinstance(uid, (bytes, bytearray)) else str(uid)
+
+            # Skip duplicates
+            cur.execute("SELECT 1 FROM emails WHERE imap_uid = ? LIMIT 1", (uid_str,))
+            if cur.fetchone():
+                skipped += 1
+                continue
+
+            status, msg_data = mail.uid("fetch", uid, "(RFC822)")
             if status != "OK" or not msg_data or not msg_data[0]:
                 continue
 
@@ -223,18 +225,20 @@ def sync_emails(req: SyncRequest):
             if len(snippet) > 200:
                 snippet = snippet[:200] + "..."
 
-            cur.execute("""
-                INSERT INTO emails (sender, subject, date, snippet)
-                VALUES (?, ?, ?, ?)
-            """, (sender or "(unknown)", subject or "(no subject)", date or "", snippet or ""))
-
-            inserted += 1
+            try:
+                cur.execute("""
+                    INSERT INTO emails (imap_uid, sender, subject, date, snippet)
+                    VALUES (?, ?, ?, ?, ?)
+                """, (uid_str, sender or "(unknown)", subject or "(no subject)", date or "", snippet or ""))
+                inserted += 1
+            except Exception:
+                skipped += 1
 
         conn.commit()
         conn.close()
         mail.logout()
 
-        return {"status": "ok", "inserted": inserted}
+        return {"status": "ok", "inserted": inserted, "skipped": skipped}
 
     except Exception as e:
         return {"status": "failed", "error": str(e)}
