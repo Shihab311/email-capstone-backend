@@ -10,7 +10,6 @@ from email.header import decode_header
 app = FastAPI()
 
 
-
 class EmailCreate(BaseModel):
     sender: str
     subject: str
@@ -43,22 +42,25 @@ class SyncRequest(BaseModel):
 def _decode_maybe(value: str | None) -> str:
     if not value:
         return ""
+
     parts = decode_header(value)
     out = ""
+
     for text, enc in parts:
         if isinstance(text, bytes):
             out += text.decode(enc or "utf-8", errors="ignore")
         else:
             out += text
+
     return out
 
 
 def _get_body_text(msg) -> str:
-    # Prefer text/plain, fallback to text/html
     if msg.is_multipart():
         for part in msg.walk():
             ctype = part.get_content_type()
             disp = str(part.get("Content-Disposition") or "")
+
             if ctype == "text/plain" and "attachment" not in disp.lower():
                 payload = part.get_payload(decode=True) or b""
                 charset = part.get_content_charset() or "utf-8"
@@ -76,11 +78,9 @@ def _get_body_text(msg) -> str:
     return payload.decode(charset, errors="ignore")
 
 
-
 @app.get("/")
 def home():
     return {"message": "Server is running"}
-
 
 
 @app.get("/emails")
@@ -120,8 +120,26 @@ def create_email(email_in: EmailCreate):
 
     conn.commit()
     conn.close()
+
     return {"message": "Email added successfully"}
 
+
+@app.delete("/emails")
+def clear_emails():
+    init_db()
+    conn = get_conn()
+    cur = conn.cursor()
+
+    cur.execute("DELETE FROM emails")
+    deleted = cur.rowcount
+
+    conn.commit()
+    conn.close()
+
+    return {
+        "status": "ok",
+        "deleted": deleted
+    }
 
 
 @app.get("/accounts")
@@ -160,8 +178,8 @@ def create_account(account: AccountCreate):
 
     conn.commit()
     conn.close()
-    return {"message": "Account saved"}
 
+    return {"message": "Account saved"}
 
 
 @app.post("/imap/test")
@@ -170,10 +188,11 @@ def test_imap_connection(data: IMAPTestRequest):
         mail = imaplib.IMAP4_SSL(data.imap_host, data.imap_port)
         mail.login(data.email, data.password)
         mail.logout()
+
         return {"status": "Connection successful"}
+
     except Exception as e:
         return {"status": "Connection failed", "error": str(e)}
-
 
 
 @app.post("/sync")
@@ -185,7 +204,6 @@ def sync_emails(req: SyncRequest):
         mail.login(req.email, req.password)
         mail.select("INBOX")
 
-        # Search all message UIDs
         status, data = mail.uid("search", None, "ALL")
         if status != "OK":
             mail.logout()
@@ -203,7 +221,6 @@ def sync_emails(req: SyncRequest):
         for uid in reversed(latest_uids):
             uid_str = uid.decode() if isinstance(uid, (bytes, bytearray)) else str(uid)
 
-            # Skip duplicates
             cur.execute("SELECT 1 FROM emails WHERE imap_uid = ? LIMIT 1", (uid_str,))
             if cur.fetchone():
                 skipped += 1
@@ -222,6 +239,7 @@ def sync_emails(req: SyncRequest):
 
             body = _get_body_text(msg)
             snippet = (body or "").strip().replace("\n", " ")
+
             if len(snippet) > 200:
                 snippet = snippet[:200] + "..."
 
@@ -229,8 +247,16 @@ def sync_emails(req: SyncRequest):
                 cur.execute("""
                     INSERT INTO emails (imap_uid, sender, subject, date, snippet)
                     VALUES (?, ?, ?, ?, ?)
-                """, (uid_str, sender or "(unknown)", subject or "(no subject)", date or "", snippet or ""))
+                """, (
+                    uid_str,
+                    sender or "(unknown)",
+                    subject or "(no subject)",
+                    date or "",
+                    snippet or ""
+                ))
+
                 inserted += 1
+
             except Exception:
                 skipped += 1
 
@@ -238,7 +264,11 @@ def sync_emails(req: SyncRequest):
         conn.close()
         mail.logout()
 
-        return {"status": "ok", "inserted": inserted, "skipped": skipped}
+        return {
+            "status": "ok",
+            "inserted": inserted,
+            "skipped": skipped
+        }
 
     except Exception as e:
         return {"status": "failed", "error": str(e)}
