@@ -12,9 +12,12 @@ app = FastAPI()
 
 class EmailCreate(BaseModel):
     sender: str
+    receiver: str = ""
+    cc: str = ""
     subject: str
     date: str
     snippet: str
+    body: str = ""
 
 
 class AccountCreate(BaseModel):
@@ -98,9 +101,12 @@ def list_emails():
             "id": row["id"],
             "imap_uid": row["imap_uid"],
             "from": row["sender"],
+            "to": row["receiver"],
+            "cc": row["cc"],
             "subject": row["subject"],
             "date": row["date"],
             "snippet": row["snippet"],
+            "body": row["body"],
         })
 
     conn.close()
@@ -114,9 +120,10 @@ def create_email(email_in: EmailCreate):
     cur = conn.cursor()
 
     cur.execute("""
-        INSERT INTO emails (imap_uid, sender, subject, date, snippet)
-        VALUES (?, ?, ?, ?, ?)
-    """, (None, email_in.sender, email_in.subject, email_in.date, email_in.snippet))
+        INSERT INTO emails (imap_uid, sender, receiver, cc, subject, date, snippet, body)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    """, (None, email_in.sender, email_in.receiver, email_in.cc,
+          email_in.subject, email_in.date, email_in.snippet, email_in.body))
 
     conn.commit()
     conn.close()
@@ -234,6 +241,8 @@ def sync_emails(req: SyncRequest):
             msg = email.message_from_bytes(raw)
 
             sender = _decode_maybe(msg.get("From"))
+            receiver = _decode_maybe(msg.get("To"))
+            cc_val = _decode_maybe(msg.get("Cc"))
             subject = _decode_maybe(msg.get("Subject"))
             date = _decode_maybe(msg.get("Date"))
 
@@ -245,14 +254,17 @@ def sync_emails(req: SyncRequest):
 
             try:
                 cur.execute("""
-                    INSERT INTO emails (imap_uid, sender, subject, date, snippet)
-                    VALUES (?, ?, ?, ?, ?)
+                    INSERT INTO emails (imap_uid, sender, receiver, cc, subject, date, snippet, body)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 """, (
                     uid_str,
                     sender or "(unknown)",
+                    receiver or "",
+                    cc_val or "",
                     subject or "(no subject)",
                     date or "",
-                    snippet or ""
+                    snippet or "",
+                    (body or "").strip(),
                 ))
 
                 inserted += 1

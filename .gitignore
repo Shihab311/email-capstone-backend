@@ -1,0 +1,75 @@
+# ─── Python ───────────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyo
+*.pyd
+.Python
+
+# ─── Virtual environments ──────────────────────────────────────────────────────
+.venv/
+venv/
+env/
+ENV/
+.env.bak
+
+# ─── Environment / secrets ────────────────────────────────────────────────────
+# Keep .env.example, but never commit real .env files
+.env
+**/.env
+!**/.env.example
+
+# ─── Database ─────────────────────────────────────────────────────────────────
+*.db
+*.sqlite
+*.sqlite3
+backend/emails.db
+
+# ─── AI vector store (large binary + generated files) ─────────────────────────
+ai_backend/vector_store/
+*.faiss
+*.pkl
+processed_emails.json
+processed_chunks.json
+
+# ─── Import / migration scripts output ────────────────────────────────────────
+import_data.py
+import_vectors.py
+
+# ─── Logs ─────────────────────────────────────────────────────────────────────
+*.log
+logs/
+
+# ─── OS ───────────────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ─── IDE ──────────────────────────────────────────────────────────────────────
+.vscode/
+.idea/
+*.suo
+*.user
+*.swp
+*.swo
+*~
+
+# ─── Build / dist ─────────────────────────────────────────────────────────────
+dist/
+build/
+*.egg-info/
+.eggs/
+site/
+
+# ─── Testing ──────────────────────────────────────────────────────────────────
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+
+# ─── Jupyter ──────────────────────────────────────────────────────────────────
+.ipynb_checkpoints/
+
+# ─── Node (frontend tooling) ──────────────────────────────────────────────────
+node_modules/
+npm-debug.log*

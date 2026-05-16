@@ -20,9 +20,12 @@ def init_db() -> None:
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             imap_uid TEXT,
             sender TEXT NOT NULL,
+            receiver TEXT NOT NULL DEFAULT '',
+            cc TEXT NOT NULL DEFAULT '',
             subject TEXT NOT NULL,
             date TEXT NOT NULL,
-            snippet TEXT NOT NULL
+            snippet TEXT NOT NULL,
+            body TEXT NOT NULL DEFAULT ''
         )
     """)
 
@@ -40,6 +43,24 @@ def init_db() -> None:
     
     try:
         cur.execute("ALTER TABLE emails ADD COLUMN imap_uid TEXT")
+    except Exception:
+        pass
+
+    # Add receiver column (migration for existing DBs)
+    try:
+        cur.execute("ALTER TABLE emails ADD COLUMN receiver TEXT NOT NULL DEFAULT ''")
+    except Exception:
+        pass
+
+    # Add cc column (migration for existing DBs)
+    try:
+        cur.execute("ALTER TABLE emails ADD COLUMN cc TEXT NOT NULL DEFAULT ''")
+    except Exception:
+        pass
+
+    # Add body column (migration for existing DBs)
+    try:
+        cur.execute("ALTER TABLE emails ADD COLUMN body TEXT NOT NULL DEFAULT ''")
     except Exception:
         pass
 
