@@ -1,0 +1,5 @@
+{
+  "metric": "cosine",
+  "index_type": "IndexFlatIP",
+  "normalized": true
+}
