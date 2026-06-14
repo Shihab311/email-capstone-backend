@@ -1,13 +1,19 @@
 from fastapi import FastAPI
 from pydantic import BaseModel
-
 from backend.database import get_conn, init_db
 
 import imaplib
 import email
 from email.header import decode_header
+from io import BytesIO
+
+from pypdf import PdfReader
+from sentence_transformers import SentenceTransformer
+import numpy as np
 
 app = FastAPI()
+
+model = SentenceTransformer("all-MiniLM-L6-v2")
 
 
 class EmailCreate(BaseModel):
@@ -37,6 +43,11 @@ class SyncRequest(BaseModel):
     email: str
     password: str
     limit: int = 20
+
+
+class SemanticSearchRequest(BaseModel):
+    query: str
+    limit: int = 5
 
 
 def _decode_maybe(value: str | None) -> str:
@@ -76,6 +87,22 @@ def _get_body_text(msg) -> str:
     payload = msg.get_payload(decode=True) or b""
     charset = msg.get_content_charset() or "utf-8"
     return payload.decode(charset, errors="ignore")
+
+
+def _extract_pdf_text(pdf_bytes: bytes) -> str:
+    try:
+        reader = PdfReader(BytesIO(pdf_bytes))
+        text_parts = []
+
+        for page in reader.pages:
+            text = page.extract_text()
+            if text:
+                text_parts.append(text)
+
+        return "\n".join(text_parts).strip()
+
+    except Exception:
+        return ""
 
 
 @app.get("/")
@@ -130,6 +157,7 @@ def clear_emails():
     conn = get_conn()
     cur = conn.cursor()
 
+    cur.execute("DELETE FROM attachments")
     cur.execute("DELETE FROM emails")
     deleted = cur.rowcount
 
@@ -217,6 +245,7 @@ def sync_emails(req: SyncRequest):
 
         inserted = 0
         skipped = 0
+        pdf_attachments_saved = 0
 
         for uid in reversed(latest_uids):
             uid_str = uid.decode() if isinstance(uid, (bytes, bytearray)) else str(uid)
@@ -255,6 +284,31 @@ def sync_emails(req: SyncRequest):
                     snippet or ""
                 ))
 
+                email_id = cur.lastrowid
+
+                for part in msg.walk():
+                    filename = part.get_filename()
+                    content_type = part.get_content_type()
+
+                    if filename and filename.lower().endswith(".pdf"):
+                        pdf_bytes = part.get_payload(decode=True)
+
+                        if pdf_bytes:
+                            extracted_text = _extract_pdf_text(pdf_bytes)
+
+                            cur.execute("""
+                                INSERT INTO attachments 
+                                (email_id, filename, content_type, extracted_text)
+                                VALUES (?, ?, ?, ?)
+                            """, (
+                                email_id,
+                                filename,
+                                content_type,
+                                extracted_text
+                            ))
+
+                            pdf_attachments_saved += 1
+
                 inserted += 1
 
             except Exception:
@@ -267,8 +321,219 @@ def sync_emails(req: SyncRequest):
         return {
             "status": "ok",
             "inserted": inserted,
-            "skipped": skipped
+            "skipped": skipped,
+            "pdf_attachments_saved": pdf_attachments_saved
         }
 
     except Exception as e:
         return {"status": "failed", "error": str(e)}
+
+
+@app.get("/attachments")
+def list_attachments():
+    init_db()
+    conn = get_conn()
+    cur = conn.cursor()
+
+    cur.execute("""
+        SELECT attachments.*, emails.subject, emails.sender
+        FROM attachments
+        JOIN emails ON attachments.email_id = emails.id
+        ORDER BY attachments.id DESC
+    """)
+
+    rows = cur.fetchall()
+    conn.close()
+
+    return [
+        {
+            "id": row["id"],
+            "email_id": row["email_id"],
+            "filename": row["filename"],
+            "content_type": row["content_type"],
+            "subject": row["subject"],
+            "from": row["sender"],
+            "extracted_text_preview": (row["extracted_text"] or "")[:500]
+        }
+        for row in rows
+    ]
+
+
+@app.get("/emails/{email_id}/attachments")
+def get_email_attachments(email_id: int):
+    init_db()
+    conn = get_conn()
+    cur = conn.cursor()
+
+    cur.execute("""
+        SELECT * FROM attachments
+        WHERE email_id = ?
+        ORDER BY id DESC
+    """, (email_id,))
+
+    rows = cur.fetchall()
+    conn.close()
+
+    return [
+        {
+            "id": row["id"],
+            "email_id": row["email_id"],
+            "filename": row["filename"],
+            "content_type": row["content_type"],
+            "extracted_text": row["extracted_text"]
+        }
+        for row in rows
+    ]
+
+
+@app.post("/analyze/{email_id}")
+def analyze_email(email_id: int):
+    init_db()
+    conn = get_conn()
+    cur = conn.cursor()
+
+    cur.execute("SELECT * FROM emails WHERE id = ?", (email_id,))
+    row = cur.fetchone()
+
+    cur.execute("SELECT extracted_text FROM attachments WHERE email_id = ?", (email_id,))
+    attachment_rows = cur.fetchall()
+
+    conn.close()
+
+    if not row:
+        return {
+            "status": "failed",
+            "error": "Email not found"
+        }
+
+    subject = row["subject"] or ""
+    sender = row["sender"] or ""
+    snippet = row["snippet"] or ""
+
+    attachment_text = " ".join([
+        attachment["extracted_text"] or ""
+        for attachment in attachment_rows
+    ])
+
+    text = f"{subject} {sender} {snippet} {attachment_text}".lower()
+
+    priority_keywords = [
+        "urgent", "deadline", "meeting", "important", "invoice",
+        "payment", "security", "verification", "confirm", "action required"
+    ]
+
+    promo_keywords = [
+        "sale", "discount", "offer", "deal", "promo",
+        "coupon", "ad", "shopping", "limited time"
+    ]
+
+    travel_keywords = [
+        "flight", "booking", "ticket", "hotel",
+        "airways", "travel", "reservation"
+    ]
+
+    finance_keywords = [
+        "bank", "card", "transaction", "receipt",
+        "payment", "invoice", "balance"
+    ]
+
+    category = "General"
+    priority_score = 50
+    reason = "No strong signal detected."
+
+    if any(word in text for word in priority_keywords):
+        category = "Important"
+        priority_score = 90
+        reason = "Contains priority-related keywords."
+
+    elif any(word in text for word in finance_keywords):
+        category = "Finance"
+        priority_score = 80
+        reason = "Contains finance-related keywords."
+
+    elif any(word in text for word in travel_keywords):
+        category = "Travel"
+        priority_score = 70
+        reason = "Contains travel-related keywords."
+
+    elif any(word in text for word in promo_keywords):
+        category = "Promotion"
+        priority_score = 30
+        reason = "Contains promotional keywords."
+
+    summary_source = attachment_text if attachment_text else snippet
+    summary = summary_source[:120] + "..." if len(summary_source) > 120 else summary_source
+
+    return {
+        "status": "ok",
+        "email_id": email_id,
+        "from": sender,
+        "subject": subject,
+        "category": category,
+        "priority_score": priority_score,
+        "summary": summary,
+        "reason": reason,
+        "attachments_analyzed": len(attachment_rows)
+    }
+
+
+@app.post("/semantic-search")
+def semantic_search(req: SemanticSearchRequest):
+    init_db()
+    conn = get_conn()
+    cur = conn.cursor()
+
+    cur.execute("""
+        SELECT 
+            emails.*,
+            GROUP_CONCAT(attachments.extracted_text, ' ') AS attachment_text
+        FROM emails
+        LEFT JOIN attachments ON emails.id = attachments.email_id
+        GROUP BY emails.id
+    """)
+
+    rows = cur.fetchall()
+    conn.close()
+
+    if not rows:
+        return {
+            "status": "failed",
+            "error": "No emails found"
+        }
+
+    email_texts = []
+    email_items = []
+
+    for row in rows:
+        text = f"{row['subject']} {row['sender']} {row['snippet']} {row['attachment_text'] or ''}"
+        email_texts.append(text)
+        email_items.append(row)
+
+    query_embedding = model.encode(req.query)
+    email_embeddings = model.encode(email_texts)
+
+    similarities = np.dot(email_embeddings, query_embedding) / (
+        np.linalg.norm(email_embeddings, axis=1) * np.linalg.norm(query_embedding)
+    )
+
+    ranked_indices = similarities.argsort()[::-1][:req.limit]
+
+    results = []
+
+    for idx in ranked_indices:
+        row = email_items[idx]
+        results.append({
+            "id": row["id"],
+            "from": row["sender"],
+            "subject": row["subject"],
+            "date": row["date"],
+            "snippet": row["snippet"],
+            "has_attachment_text": bool(row["attachment_text"]),
+            "similarity": float(similarities[idx])
+        })
+
+    return {
+        "status": "ok",
+        "query": req.query,
+        "results": results
+    }

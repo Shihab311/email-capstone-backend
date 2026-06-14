@@ -14,7 +14,6 @@ def init_db() -> None:
     conn = get_conn()
     cur = conn.cursor()
 
-    
     cur.execute("""
         CREATE TABLE IF NOT EXISTS emails (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -26,7 +25,6 @@ def init_db() -> None:
         )
     """)
 
-    
     cur.execute("""
         CREATE TABLE IF NOT EXISTS accounts (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -37,13 +35,22 @@ def init_db() -> None:
         )
     """)
 
-    
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS attachments (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            email_id INTEGER NOT NULL,
+            filename TEXT NOT NULL,
+            content_type TEXT,
+            extracted_text TEXT,
+            FOREIGN KEY (email_id) REFERENCES emails(id)
+        )
+    """)
+
     try:
         cur.execute("ALTER TABLE emails ADD COLUMN imap_uid TEXT")
     except Exception:
         pass
 
-    
     try:
         cur.execute("CREATE UNIQUE INDEX idx_emails_imap_uid ON emails(imap_uid)")
     except Exception:
