@@ -19,9 +19,12 @@ def init_db() -> None:
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             imap_uid TEXT,
             sender TEXT NOT NULL,
+            receiver TEXT DEFAULT '',
+            cc TEXT DEFAULT '',
             subject TEXT NOT NULL,
             date TEXT NOT NULL,
-            snippet TEXT NOT NULL
+            snippet TEXT NOT NULL,
+            body TEXT DEFAULT ''
         )
     """)
 
@@ -46,10 +49,16 @@ def init_db() -> None:
         )
     """)
 
-    try:
-        cur.execute("ALTER TABLE emails ADD COLUMN imap_uid TEXT")
-    except Exception:
-        pass
+    for column, col_type in [
+        ("imap_uid", "TEXT"),
+        ("receiver", "TEXT DEFAULT ''"),
+        ("cc", "TEXT DEFAULT ''"),
+        ("body", "TEXT DEFAULT ''"),
+    ]:
+        try:
+            cur.execute(f"ALTER TABLE emails ADD COLUMN {column} {col_type}")
+        except Exception:
+            pass
 
     try:
         cur.execute("CREATE UNIQUE INDEX idx_emails_imap_uid ON emails(imap_uid)")

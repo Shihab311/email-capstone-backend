@@ -1,6 +1,7 @@
 import streamlit as st
 import requests
 import html
+import time
 
 API_URL = "http://127.0.0.1:8000"
 AI_API_URL = "http://127.0.0.1:8001"
@@ -9,11 +10,16 @@ st.set_page_config(
     page_title="Intelligent Email Retrieval System",
     page_icon="📧",
     layout="wide",
-    initial_sidebar_state="collapsed"
+    initial_sidebar_state="collapsed",
 )
 
 st.markdown("""
 <style>
+html, body, .stApp {
+    background-color: #FFFFFF !important;
+    color: #111827 !important;
+}
+
 .block-container {
     padding-top: 1rem !important;
     max-width: 1350px !important;
@@ -29,27 +35,7 @@ div[data-testid="stDecoration"],
 html, body, [class*="css"] {
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 }
-.stApp {
-    background-color: #F4F6FB !important;
-}
 
-label,
-[data-testid="stWidgetLabel"],
-[data-testid="stWidgetLabel"] p {
-    color: #334155 !important;
-    font-weight: 700 !important;
-}
-
-.stMarkdown,
-p,
-h1,
-h2,
-h3,
-h4,
-h5,
-h6 {
-    color: #111827 !important;
-}
 .app-title {
     font-size: 32px;
     font-weight: 850;
@@ -59,12 +45,12 @@ h6 {
 
 .app-subtitle {
     font-size: 15px;
-    color: #475569;
+    color: #4B5563;
     margin-bottom: 30px;
 }
 
 .side-label {
-    color: #334155;
+    color: #475569;
     font-size: 12px;
     font-weight: 800;
     margin-top: 26px;
@@ -73,17 +59,25 @@ h6 {
     letter-spacing: 0.08em;
 }
 
+label,
+[data-testid="stWidgetLabel"],
+[data-testid="stWidgetLabel"] p {
+    color: #374151 !important;
+    font-weight: 700 !important;
+}
+
 .email-row {
-    background-color: #111827;
-    border: 1px solid #253041;
+    background-color: #FFFFFF;
+    border: 1px solid #D1D5DB;
     border-radius: 16px;
     padding: 16px 18px;
-    margin-bottom: 12px;
+    margin-bottom: 14px;
+    box-shadow: 0 4px 14px rgba(15, 23, 42, 0.08);
 }
 
 .email-row:hover {
     border-color: #60A5FA;
-    background-color: #172033;
+    background-color: #F8FAFC;
 }
 
 .email-header {
@@ -95,47 +89,48 @@ h6 {
 
 .email-sender {
     font-size: 14px;
-    color: #F8FAFC;
+    color: #111827;
     font-weight: 750;
 }
 
 .email-date {
     font-size: 12px;
-    color: #94A3B8;
+    color: #6B7280;
     white-space: nowrap;
 }
 
 .email-subject {
     font-size: 17px;
-    color: #F9FAFB;
+    color: #111827;
     font-weight: 800;
     margin-bottom: 6px;
 }
 
 .email-snippet {
     font-size: 14px;
-    color: #CBD5E1;
+    color: #4B5563;
     line-height: 1.55;
 }
 
-.attachment-card {
-    background-color: #0F172A;
-    border: 1px solid #334155;
+.pdf-card {
+    background-color: #F8FAFC;
+    border: 1px solid #BFDBFE;
+    border-left: 4px solid #2563EB;
     border-radius: 14px;
     padding: 14px 16px;
     margin-top: -4px;
     margin-bottom: 14px;
 }
 
-.attachment-title {
-    color: #93C5FD;
+.pdf-title {
+    color: #1D4ED8;
     font-size: 14px;
     font-weight: 800;
     margin-bottom: 8px;
 }
 
-.attachment-text {
-    color: #CBD5E1;
+.pdf-text {
+    color: #111827;
     font-size: 13px;
     line-height: 1.55;
     white-space: pre-wrap;
@@ -143,18 +138,23 @@ h6 {
 
 .stTextInput input,
 .stNumberInput input {
-    background-color: #0B0F19 !important;
-    border: 1px solid #4B5563 !important;
+    background-color: #FFFFFF !important;
+    border: 1px solid #CBD5E1 !important;
     border-radius: 10px !important;
-    color: #F8FAFC !important;
+    color: #111827 !important;
     height: 42px !important;
     box-shadow: none !important;
 }
 
+.stTextInput input::placeholder {
+    color: #374151 !important;
+    opacity: 1 !important;
+}
+
 .stTextInput input:focus,
 .stNumberInput input:focus {
-    border: 1px solid #60A5FA !important;
-    box-shadow: 0 0 0 1px #60A5FA !important;
+    border: 1px solid #2563EB !important;
+    box-shadow: 0 0 0 1px #2563EB !important;
 }
 
 [data-testid="InputInstructions"] {
@@ -169,24 +169,21 @@ button {
 
 div[data-testid="stButton"] > button {
     width: 100%;
-    text-align: left;
-    background: white !important;
+    text-align: center;
+    background-color: #FFFFFF !important;
     color: #111827 !important;
     border: 1px solid #CBD5E1 !important;
 }
 
-.status-card {
-    padding: 14px 16px;
-    border-radius: 14px;
-    margin-bottom: 14px;
-    background-color: #123524;
-    color: #86EFAC;
-    font-weight: 700;
+div[data-testid="stButton"] > button:hover {
+    background-color: #F3F4F6 !important;
+    border-color: #2563EB !important;
+    color: #111827 !important;
 }
 
 .ai-answer-box {
-    background: linear-gradient(135deg, #0F172A 0%, #1E1B4B 100%);
-    border: 1px solid #4338CA;
+    background: #F8FAFC;
+    border: 1px solid #CBD5E1;
     border-radius: 16px;
     padding: 22px 24px;
     margin-bottom: 20px;
@@ -195,7 +192,7 @@ div[data-testid="stButton"] > button {
 .ai-answer-label {
     font-size: 13px;
     font-weight: 800;
-    color: #A78BFA;
+    color: #4F46E5;
     text-transform: uppercase;
     letter-spacing: 0.1em;
     margin-bottom: 10px;
@@ -203,38 +200,22 @@ div[data-testid="stButton"] > button {
 
 .ai-answer-text {
     font-size: 15px;
-    color: #E2E8F0;
+    color: #111827;
     line-height: 1.7;
     white-space: pre-wrap;
 }
 
 .ai-source-card {
-    background-color: #111827;
-    border: 1px solid #253041;
+    background-color: #FFFFFF;
+    border: 1px solid #D1D5DB;
     border-radius: 14px;
     padding: 14px 16px;
     margin-bottom: 10px;
 }
 
-.ai-source-card:hover {
-    border-color: #818CF8;
-    background-color: #172033;
-}
-
-.ai-source-idx {
-    display: inline-block;
-    background: #4338CA;
-    color: #fff;
-    font-size: 11px;
-    font-weight: 800;
-    padding: 2px 8px;
-    border-radius: 6px;
-    margin-right: 8px;
-}
-
 .ai-source-subject {
     font-size: 15px;
-    color: #F9FAFB;
+    color: #111827;
     font-weight: 700;
     margin-top: 6px;
     margin-bottom: 4px;
@@ -242,14 +223,25 @@ div[data-testid="stButton"] > button {
 
 .ai-source-meta {
     font-size: 12px;
-    color: #94A3B8;
+    color: #6B7280;
 }
 
 .ai-source-preview {
     font-size: 13px;
-    color: #CBD5E1;
+    color: #4B5563;
     margin-top: 6px;
     line-height: 1.5;
+}
+
+.ai-source-idx {
+    display: inline-block;
+    background: #4F46E5;
+    color: #fff;
+    font-size: 11px;
+    font-weight: 800;
+    padding: 2px 8px;
+    border-radius: 6px;
+    margin-right: 8px;
 }
 
 .ai-status-pill {
@@ -260,9 +252,13 @@ div[data-testid="stButton"] > button {
     border-radius: 999px;
     margin-right: 8px;
 }
+            .stTextInput input,
+.stNumberInput input {
+    caret-color: #111827 !important;
+}
 
-.ai-status-ready { background: #064E3B; color: #6EE7B7; }
-.ai-status-not-ready { background: #7F1D1D; color: #FCA5A5; }
+.ai-status-ready { background: #DCFCE7; color: #166534; }
+.ai-status-not-ready { background: #FEE2E2; color: #991B1B; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -317,6 +313,22 @@ def sync_emails(email_address, app_password, limit):
         return {"status": "failed", "error": "Backend server is not running."}
 
 
+def get_email_search_text(email_item):
+    text = (
+        str(email_item.get("subject", "")) + " " +
+        str(email_item.get("from", "")) + " " +
+        str(email_item.get("snippet", "")) + " " +
+        str(email_item.get("body", ""))
+    )
+
+    attachments = load_attachments_for_email(email_item.get("id"))
+    attachment_text = " ".join(
+        str(att.get("extracted_text", "")) for att in attachments
+    )
+
+    return (text + " " + attachment_text).lower()
+
+
 def render_email_list(emails):
     if not emails:
         st.info("No emails found.")
@@ -356,9 +368,9 @@ def render_email_list(emails):
 
                 st.markdown(
                     f"""
-                    <div class="attachment-card">
-                        <div class="attachment-title">📎 PDF Attachment: {filename}</div>
-                        <div class="attachment-text">{preview}</div>
+                    <div class="pdf-card">
+                        <div class="pdf-title">📎 PDF Attachment: {filename}</div>
+                        <div class="pdf-text">{preview}</div>
                     </div>
                     """,
                     unsafe_allow_html=True
@@ -393,8 +405,8 @@ with left_col:
 
     st.markdown('<div class="side-label">Connect Email</div>', unsafe_allow_html=True)
 
-    email_address = st.text_input("Email Address", placeholder="Enter email address")
-    app_password = st.text_input("App Password", type="password", placeholder="Enter email app password")
+    email_address = st.text_input("Email Address", placeholder="Enter Gmail address")
+    app_password = st.text_input("App Password", type="password", placeholder="Enter Gmail app password")
 
     limit = st.number_input(
         "Emails to Sync",
@@ -417,7 +429,8 @@ if sync_clicked:
 
         if result.get("status") == "ok":
             st.success(
-                f"✅ Synchronization completed. Inserted: {result.get('inserted', 0)} | "
+                f"✅ Synchronization completed. "
+                f"Inserted: {result.get('inserted', 0)} | "
                 f"Skipped: {result.get('skipped', 0)} | "
                 f"PDFs saved: {result.get('pdf_attachments_saved', 0)}"
             )
@@ -452,27 +465,15 @@ with main_col:
             label_visibility="collapsed"
         )
 
-        st.caption("Search now checks email content and extracted PDF attachment text.")
+        st.caption("Search checks email text and extracted PDF attachment text.")
 
         if search_query.strip():
             query = search_query.lower()
 
-            filtered_emails = []
-
-            for email_item in emails:
-                email_text = (
-                    str(email_item.get("subject", "")) + " " +
-                    str(email_item.get("from", "")) + " " +
-                    str(email_item.get("snippet", ""))
-                ).lower()
-
-                attachments = load_attachments_for_email(email_item.get("id"))
-                attachment_text = " ".join(
-                    str(att.get("extracted_text", "")) for att in attachments
-                ).lower()
-
-                if query in email_text or query in attachment_text:
-                    filtered_emails.append(email_item)
+            filtered_emails = [
+                email_item for email_item in emails
+                if query in get_email_search_text(email_item)
+            ]
 
             st.markdown(f"### Results · {len(filtered_emails)} email(s)")
             render_email_list(filtered_emails)
@@ -498,42 +499,49 @@ with main_col:
         except Exception:
             st.warning("AI backend is not running. Start it with: `uvicorn ai_backend.main:app --port 8001`")
 
+        st.markdown("---")
+
         if not ai_ready:
-            st.markdown("---")
             st.caption("Build the AI index from your synced emails before searching.")
-            if st.button("⚡ Build AI Index", use_container_width=True):
-                with st.spinner("Ingesting emails, generating embeddings, and building indexes... This may take a few minutes."):
-                    try:
-                        resp = requests.post(f"{AI_API_URL}/ingest", json={}, timeout=600)
-                        if resp.status_code == 200:
-                            data = resp.json()
-                            st.success(
-                                f"✅ Index built! {data.get('emails_embedded',0)} emails → "
-                                f"{data.get('chunks_created',0)} chunks → "
-                                f"{data.get('faiss_vectors',0)} FAISS vectors"
-                            )
-                            st.rerun()
-                        else:
-                            st.error(f"Ingest failed: {resp.text}")
-                    except requests.exceptions.ConnectionError:
-                        st.error("Cannot connect to AI backend.")
-                    except Exception as e:
-                        st.error(f"Ingest error: {e}")
+            ingest_label = "⚡ Build AI Index"
+        else:
+            st.caption("Synced new emails? Click to add them to AI Search.")
+            ingest_label = "🔄 Process synced emails → AI Search"
+
+        if st.button(ingest_label, use_container_width=True):
+            with st.spinner("Embedding new emails and updating the AI index..."):
+                try:
+                    resp = requests.post(f"{AI_API_URL}/ingest", json={}, timeout=600)
+                    if resp.status_code == 200:
+                        data = resp.json()
+                        st.success(
+                            f"✅ AI index updated. "
+                            f"{data.get('emails_in_db',0)} emails in database · "
+                            f"{data.get('chunks_created',0)} chunks · "
+                            f"{data.get('faiss_vectors',0)} vectors"
+                        )
+                        st.rerun()
+                    else:
+                        st.error(f"Ingest failed: {resp.text}")
+                except requests.exceptions.ConnectionError:
+                    st.error("Cannot connect to AI backend.")
+                except Exception as e:
+                    st.error(f"Ingest error: {e}")
 
         st.markdown("---")
 
         ai_query = st.text_input(
             "Ask anything about your emails",
-            placeholder="e.g. What is the Project Phoenix deadline?",
+            placeholder="e.g. What did John say about the project deadline?",
             label_visibility="collapsed",
             key="ai_query",
         )
 
         opts_col1, opts_col2 = st.columns(2)
         with opts_col1:
-            use_rerank = st.checkbox("LLM Reranking", value=False)
+            use_rerank = st.checkbox("LLM Reranking", value=False, help="Use Gemini to rerank results for higher accuracy")
         with opts_col2:
-            expand_thread = st.checkbox("Expand Threads", value=False)
+            expand_thread = st.checkbox("Expand Threads", value=False, help="Include sibling chunks from the same email thread")
 
         with st.expander("Advanced Filters"):
             fc1, fc2 = st.columns(2)
@@ -574,13 +582,21 @@ with main_col:
                         if date_to.strip():
                             payload["date_to"] = date_to.strip()
 
+                        start_time = time.perf_counter()
                         resp = requests.post(f"{AI_API_URL}/search", json=payload, timeout=120)
+                        elapsed = time.perf_counter() - start_time
 
                         if resp.status_code == 200:
                             data = resp.json()
                             answer = data.get("answer", "")
                             sources = data.get("sources", [])
                             model = data.get("model_used", "")
+
+                            st.markdown(
+                                f'<div class="ai-status-pill ai-status-ready">'
+                                f'⏱️ Answered in {elapsed:.2f} s</div>',
+                                unsafe_allow_html=True,
+                            )
 
                             st.markdown(
                                 f'<div class="ai-answer-box">'
@@ -638,29 +654,17 @@ with main_col:
 
         important_emails = []
         for email_item in emails:
-            base_text = (
-                str(email_item.get("subject", "")) + " " +
-                str(email_item.get("from", "")) + " " +
-                str(email_item.get("snippet", ""))
-            ).lower()
-
-            attachments = load_attachments_for_email(email_item.get("id"))
-            attachment_text = " ".join(
-                str(att.get("extracted_text", "")) for att in attachments
-            ).lower()
-
-            full_text = base_text + " " + attachment_text
-
+            text = get_email_search_text(email_item)
             if (
-                "important" in full_text
-                or "urgent" in full_text
-                or "deadline" in full_text
-                or "meeting" in full_text
-                or "invoice" in full_text
-                or "payment" in full_text
+                "important" in text
+                or "urgent" in text
+                or "deadline" in text
+                or "meeting" in text
+                or "invoice" in text
+                or "payment" in text
             ):
                 important_emails.append(email_item)
 
-        st.caption("This section checks both email text and PDF attachment text.")
+        st.caption("This section checks email text and extracted PDF attachment text.")
         st.markdown(f"### Important · {len(important_emails)} email(s)")
         render_email_list(important_emails)
