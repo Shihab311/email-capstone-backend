@@ -40,7 +40,17 @@ def init_db() -> None:
         )
     """)
 
-    
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS attachments (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            email_id INTEGER NOT NULL,
+            filename TEXT NOT NULL,
+            content_type TEXT,
+            extracted_text TEXT,
+            FOREIGN KEY (email_id) REFERENCES emails(id)
+        )
+    """)
+
     try:
         cur.execute("ALTER TABLE emails ADD COLUMN imap_uid TEXT")
     except Exception:

@@ -6,6 +6,9 @@ from backend.database import get_conn, init_db
 import imaplib
 import email
 from email.header import decode_header
+from io import BytesIO
+
+from pypdf import PdfReader
 
 app = FastAPI()
 
@@ -81,6 +84,19 @@ def _get_body_text(msg) -> str:
     return payload.decode(charset, errors="ignore")
 
 
+def _extract_pdf_text(pdf_bytes: bytes) -> str:
+    try:
+        reader = PdfReader(BytesIO(pdf_bytes))
+        parts = []
+        for page in reader.pages:
+            text = page.extract_text()
+            if text:
+                parts.append(text)
+        return "\n".join(parts).strip()
+    except Exception:
+        return ""
+
+
 @app.get("/")
 def home():
     return {"message": "Server is running"}
@@ -137,6 +153,7 @@ def clear_emails():
     conn = get_conn()
     cur = conn.cursor()
 
+    cur.execute("DELETE FROM attachments")
     cur.execute("DELETE FROM emails")
     deleted = cur.rowcount
 
@@ -224,6 +241,7 @@ def sync_emails(req: SyncRequest):
 
         inserted = 0
         skipped = 0
+        pdf_attachments_saved = 0
 
         for uid in reversed(latest_uids):
             uid_str = uid.decode() if isinstance(uid, (bytes, bytearray)) else str(uid)
@@ -267,6 +285,30 @@ def sync_emails(req: SyncRequest):
                     (body or "").strip(),
                 ))
 
+                email_id = cur.lastrowid
+
+                for part in msg.walk():
+                    filename = part.get_filename()
+                    content_type = part.get_content_type()
+
+                    if filename and filename.lower().endswith(".pdf"):
+                        pdf_bytes = part.get_payload(decode=True)
+
+                        if pdf_bytes:
+                            extracted_text = _extract_pdf_text(pdf_bytes)
+
+                            cur.execute("""
+                                INSERT INTO attachments (email_id, filename, content_type, extracted_text)
+                                VALUES (?, ?, ?, ?)
+                            """, (
+                                email_id,
+                                filename,
+                                content_type,
+                                extracted_text,
+                            ))
+
+                            pdf_attachments_saved += 1
+
                 inserted += 1
 
             except Exception:
@@ -279,8 +321,66 @@ def sync_emails(req: SyncRequest):
         return {
             "status": "ok",
             "inserted": inserted,
-            "skipped": skipped
+            "skipped": skipped,
+            "pdf_attachments_saved": pdf_attachments_saved,
         }
 
     except Exception as e:
         return {"status": "failed", "error": str(e)}
+
+
+@app.get("/attachments")
+def list_attachments():
+    init_db()
+    conn = get_conn()
+    cur = conn.cursor()
+
+    cur.execute("""
+        SELECT attachments.*, emails.subject, emails.sender
+        FROM attachments
+        JOIN emails ON attachments.email_id = emails.id
+        ORDER BY attachments.id DESC
+    """)
+
+    rows = cur.fetchall()
+    conn.close()
+
+    return [
+        {
+            "id": row["id"],
+            "email_id": row["email_id"],
+            "filename": row["filename"],
+            "content_type": row["content_type"],
+            "subject": row["subject"],
+            "from": row["sender"],
+            "extracted_text_preview": (row["extracted_text"] or "")[:500],
+        }
+        for row in rows
+    ]
+
+
+@app.get("/emails/{email_id}/attachments")
+def get_email_attachments(email_id: int):
+    init_db()
+    conn = get_conn()
+    cur = conn.cursor()
+
+    cur.execute("""
+        SELECT * FROM attachments
+        WHERE email_id = ?
+        ORDER BY id DESC
+    """, (email_id,))
+
+    rows = cur.fetchall()
+    conn.close()
+
+    return [
+        {
+            "id": row["id"],
+            "email_id": row["email_id"],
+            "filename": row["filename"],
+            "content_type": row["content_type"],
+            "extracted_text": row["extracted_text"],
+        }
+        for row in rows
+    ]
