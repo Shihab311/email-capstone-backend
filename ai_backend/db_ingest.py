@@ -53,6 +53,15 @@ def fetch_emails_from_db(
         date = row["date"] or ""
         snippet = row["snippet"] or ""
 
+        # Stable index key: prefer imap_uid (e.g. "enron_00001.eml" or the IMAP
+        # UID of a synced personal email) so re-ingesting skips emails already in
+        # the index and only embeds genuinely new ones. Fall back to the row id.
+        try:
+            imap_uid = row["imap_uid"]
+        except (IndexError, KeyError):
+            imap_uid = None
+        filename = str(imap_uid).strip() if imap_uid else f"db_email_{email_id}"
+
         # Use body if available, fall back to snippet
         try:
             body = row["body"] or ""
@@ -91,7 +100,7 @@ def fetch_emails_from_db(
 
         records.append(
             {
-                "filename": f"db_email_{email_id}",
+                "filename": filename,
                 "subject": subject,
                 "sender": sender,
                 "receiver": receiver,
